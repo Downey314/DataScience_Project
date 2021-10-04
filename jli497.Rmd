@@ -1,0 +1,404 @@
+---
+title: "jli497"
+author: "JIARUI LI"
+date: "01/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tibble)
+library(ggplot2)
+```
+
+## Data Processing
+```{r}
+voice <- read.csv("/Users/downey/Desktop/data1.csv", header = T, stringsAsFactors = FALSE, skip = 1)
+View(voice)
+
+#Drop last two Rows
+voice <- voice[-c(72, 73), ]
+#Drop empty Columns
+voice <- voice[,-c(17, 102:425)]
+
+dim(voice)
+# change data name
+names(voice)[1:23]=c("ID","Healthy","Choir","Date","Age","Gender","Height","Ethnicity","Employment","Work","Education","Diagnosis Years","Medication","Medication Type","Smoke","Past Meds","Choir Type","singing activity","instrument","instrument Type","voice Activities","Exercise","PD Activities")
+length(c(1, 2))
+
+
+#Checking How many NA values in the dataframe
+cbind(
+   lapply(
+     lapply(voice, is.na)
+     , sum))
+#sapply(voice, function(x) sum(is.na(x)))
+
+# data clean for age
+# Age-Group 1-Middle Age 2-Young old 3-elders
+range(voice[5])
+age_group <- vector()
+for (i in 1:nrow(voice)){
+  if (voice[i,5] >= 39 & voice[i,5] <= 59) {age_group[i] = 1}
+  if (voice[i,5] > 59 & voice[i,5] <= 74) {age_group[i] = 2}
+  if (voice[i,5] > 74 & voice[i,5] <= 89) {age_group[i] = 3}
+}
+#voice$Age=age_group
+#add_column(voice, age_group, .after = "Age")
+
+#voice <- add_column(voice, age_group, .after = 5)
+
+
+
+# data clean for height
+#voice$Height <- gsub('"',"",voice[,7])
+index <- grepl("'",voice[,7])
+height <- vector()
+for (i in 1:length(index)){
+  #Value with ' " ' example 5'22"
+  if (index[i] & grepl('\"',voice[i,7])){
+    height[i] <- round(as.numeric(gsub("'",".",gsub('"',"",voice[i,7])))*30.48,1)}
+  #Value with ' . ' example 5'3.5
+  else if (index[i] & grepl('\\.',voice[i,7])){
+    height[i] <- round(as.numeric(gsub("'",".",gsub('\\.',"",voice[i,7])))*30.48,1)}
+  else if (index[i]){
+    print(i)
+    height[i] <- round(as.numeric(gsub("'",".",voice$Height[i]))*30.48,1)
+  }
+  else{height[i] <-as.numeric(voice$Height[i])}
+}
+voice$Height=height
+
+
+# data clean for Ethnicity
+#1 - NZ 2 - Others
+ethnicity <- voice[,8]
+for (i in 1:nrow(voice)){
+  if (!is.na(voice[i, 8]) & voice[i,8]!="1") {
+    ethnicity[i]="2"
+  }
+}
+voice$Ethnicity = ethnicity
+
+
+# data clean for Work
+# 1 - Speech related work 2 - others
+work <- tolower(voice[,10])
+work[grep("teach",work)] <-1
+work[grep("tutor",work)] <-1
+work[grep("lecturer",work)] <-1
+work[grep("consultant",work)] <-1
+work[grep("salesperson",work)] <-1
+work[grep("director",work)] <-1
+work[grep("manage",work)] <-1
+for (i in 1:nrow(voice)){
+  if (work[i]!="1") {
+    work[i]="2"}}
+voice$Work = work
+
+#data clean for Smoking
+#2 - Smoking
+smoking <- voice[,15]
+for (i in 1:nrow(voice)){
+  if (smoking[i]!="2") {
+    smoking[i]="1"}}
+voice$Smoke = smoking
+
+
+#Singing Activity
+class(voice$'singing activity')
+for (i in 1:nrow(voice)){
+  if (voice$'singing activity'[i] != "2"){
+    voice$'singing activity'[i] = 1
+  }
+}
+
+
+#Exercise
+#0 - Non-exercise 1 - Exercise
+for (i in 1:nrow(voice)){
+  if (voice$Exercise[i] == "" | voice$Exercise[i] == "na"){
+    voice$Exercise[i] = 0
+  }else {
+    voice$Exercise[i] = 1
+  }
+}
+
+#UPDRS motor/non-motor SPeech
+for (j in 24:26){
+  for (i in 1:nrow(voice)){
+    if (!is.na(voice[, j][i]) & voice[,j][i] == -9999){
+      voice[,j][i] = NA
+    }
+  }
+}
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 24:27){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+
+#EAT.10 - 0~4 Scale
+class(voice$EAT.10)
+for (i in 1:nrow(voice)) {
+  if (voice$EAT.10[i] >= 4) {
+    voice$EAT.10[i] = 4
+  }
+}
+
+#V.RQOL
+for (i in 1:nrow(voice)){
+  str = voice$V.RQOL[i]
+  index_1 <- gregexpr("\\(", str)
+  index_2 <- gregexpr("\\（", str)
+  if (index_1[[1]][1] != -1){
+    value <- substring(str, 1, index_1[[1]][1] - 1)
+    voice$V.RQOL[i] = as.numeric(value)
+  }else if (index_2[[1]][1] != -1){
+    value <- substring(str, 1, index_2[[1]][1] - 1)
+    voice$V.RQOL[i] = as.numeric(value)
+  }
+}
+
+#HADsAnxiety
+for (i in 1:2){
+  id <- voice$Healthy == i
+  na.id <- is.na(voice$HADsAnxiety[id])
+  if(sum(na.id > 0)){
+    print(sum(na.id))
+    voice$HADsAnxiety[id][na.id] = round(mean(voice$HADsAnxiety[id], na.rm = TRUE), 1)
+  }else{
+    next
+  }
+}
+
+#HADsDepression
+for (i in 1:2){
+  id <- voice$Healthy == i
+  na.id <- is.na(voice$HADsDepression[id])
+  if(sum(na.id > 0)){
+    print(sum(na.id))
+    voice$HADsDepression[id][na.id] = round(mean(voice$HADsDepression[id], na.rm = TRUE), 1)
+  }else{
+    next
+  }
+}
+
+#BSCIQ2
+na.id <- is.na(voice$BSCI.Q2)
+voice$BSCI.Q2[na.id] = 0
+
+
+#Drop uncorrelated columns
+cbind(names(voice))
+voice <- voice[,-c(4, 9, 11:14, 16:17, 19:21, 23, 29, 58:59, 74:75, 90:91)]
+```
+
+## Pitch (Acoustic) prolonged ah
+```{r}
+#Minimum Pitch (Hz) index31
+for (i in 1:nrow(voice)){
+  if (!is.na(voice$Minimum.Pitch..Hz.[i]) & voice$Minimum.Pitch..Hz.[i] == 0){
+      voice$Minimum.Pitch..Hz.[i] = NA
+  }
+} 
+for (i in 1:2){
+  id <- voice$Healthy == i
+    na.id <- is.na(voice$Minimum.Pitch..Hz.[id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice$Minimum.Pitch..Hz.[id][na.id] = round(median(voice$Minimum.Pitch..Hz.[id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+}
+
+#Change NA to Mean
+#Maximum Pitch (Hz) ~ vFo
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 32:42){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+
+#Periodicity
+for (i in 1:nrow(voice)){
+  if (!is.na(as.numeric(voice$Periodicity[i])) & as.numeric(voice$Periodicity[i]) < 0) {
+    voice$Periodicity[i] = abs(as.numeric(voice$Periodicity[i]))
+  }
+}
+for (i in 1:2){
+  id <- voice$Healthy == i
+  na.id <- is.na(as.numeric(voice$Periodicity[id]))
+  if(sum(na.id > 0)){
+    print(sum(na.id))
+    voice$Periodicity[id][na.id] = round(mean(as.numeric(voice$Periodicity[id]), na.rm = TRUE), 1)
+  }else{
+    next
+  }
+}
+sum(is.na(as.numeric(voice$Periodicity)))
+
+#Semitone Range | Std. Deviation (Semitones)
+class(voice$Semitone.Range)
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 44:45){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+#summary(voice)
+```
+
+
+## Cookie Jar - Picture Description
+```{r}
+#Maximum Pitch (Hz)
+class(voice$Maximum.Pitch..Hz..1)
+for (i in 1:2){
+  id <- voice$Healthy == i
+  na.id <- is.na(voice$Maximum.Pitch..Hz..1[id])
+  if(sum(na.id > 0)){
+    print(sum(na.id))
+    voice$Maximum.Pitch..Hz..1[id][na.id] = round(mean(voice$Maximum.Pitch..Hz..1[id], na.rm = TRUE), 1)
+  }else{
+    next
+  }
+}
+#Minimum.Energy..dB..1
+class(voice$Minimum.Energy..dB..1)
+for (i in 1:nrow(voice)){
+  if (!is.na(voice$Minimum.Energy..dB..1[i]) & voice$Minimum.Energy..dB..1[i] < 0) {
+    voice$Minimum.Energy..dB..1[i] = abs(voice$Minimum.Energy..dB..1[i])
+  }
+}
+summary(voice$Minimum.Energy..dB..1)
+
+#Minimum.Energy..dB..1 ~ 
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 47:56){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+#Periodicity.1 ~ Std. Deviation (Semitones)
+class(voice$Periodicity.1)
+for (i in 1:nrow(voice)){
+  if (!is.na(voice$Periodicity.1[i]) & voice$Periodicity.1[i] < 0) {
+    voice$Periodicity.1[i] = abs(voice$Periodicity.1[i])
+  }
+}
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 57:59){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+```
+
+
+## Grandfather Reading Passage
+```{r}
+#Start with Column 60
+
+for (i in 1:nrow(voice)){
+  if (!is.na(voice$Periodicity.2[i]) & voice$Periodicity.2[i] < 0) {
+    voice$Periodicity.2[i] = abs(voice$Periodicity.2[i])
+  }
+}
+
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 60:73){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+```
+
+## Conversation
+```{r}
+#Start with Column 74
+class(voice$Fo_Conversation)
+
+for (j in 74:81){
+  for (i in 1:nrow(voice)){
+    if (!is.na(voice[, j][i]) & voice[,j][i] == -9999){
+      voice[,j][i] = NA
+    }
+  }
+}
+for (i in 1:2){
+  id <- voice$Healthy == i
+  for (j in 74:81){
+    na.id <- is.na(voice[, j][id])
+    if(sum(na.id > 0)){
+      print(sum(na.id))
+      voice[, j][id][na.id] = round(mean(voice[, j][id], na.rm = TRUE), 1)
+    }else{
+    next
+    }
+  }
+}
+```
+
+```{r}
+voice <- add_column(voice, age_group, .after = 4)
+```
+
+
+## Some Graph
+```{r}
+class(voice$Healthy)
+voice$Healthy = as.character(voice$Healthy)
+ggplot(voice, aes(x=Healthy, y=Age)) +
+  ggtitle("Age Vs. Healthy Condition") +
+  geom_boxplot() + 
+  geom_jitter(alpha = 0.3, color = "blue")
+
+
+voice$Gender= as.character(voice$Gender)
+ggplot(voice) +
+  geom_bar(aes(x=Healthy,fill=Gender,col=Gender),position = "dodge")+
+p
+
+?geom_bar
+write.csv(voice,"/Users/downey/Desktop/DDD.csv", row.names = FALSE)
+```
